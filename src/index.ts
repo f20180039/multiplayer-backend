@@ -16,9 +16,10 @@ app.get("/", (req, res) => {
   res.send("Hello from Multiplayer Game Backend!"); // You can replace this with any HTML content if needed.
 });
 
+const corsOrigin = process.env.CORS_ORIGIN || "*";
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: { origin: corsOrigin },
 });
 
 const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
@@ -34,8 +35,13 @@ async function startServer() {
     io.on("connection", (socket) => {
       console.log("✅ User connected:", socket.id);
 
-      socket.on("join_room", (roomId: string) => {
+      // Adjusted to accept gameId and roomId as an object
+      socket.on("join_room", ({ gameId, roomId }) => {
+        console.log(
+          `User ${socket.id} joining room ${roomId} for game ${gameId}`
+        );
         socket.join(roomId);
+        socket.emit("room_joined", { roomId });
         socket.to(roomId).emit("user_joined", socket.id);
       });
 

@@ -20,4 +20,4 @@ This is the backend for a multiplayer game platform. It supports real-time gamep
 
 ```bash
 git clone https://github.com/your-username/your-repo.git
-cd your-repo/backend
+cd your-repo/multiplayer-backend
