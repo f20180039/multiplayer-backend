@@ -10,6 +10,7 @@ export interface ClientToServerEvents {
   [SOCKET_EVENTS.PIG.ROLL_DICE]: (data: { roomId: string }) => void;
   [SOCKET_EVENTS.PIG.BANK_SCORE]: (data: { roomId: string }) => void;
   [SOCKET_EVENTS.PIG.NEW_BANNED]: (data: { roomId: string }) => void;
+  // Other game events can be added here
 }
 
 export interface ServerToClientEvents {

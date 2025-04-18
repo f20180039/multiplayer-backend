@@ -43,13 +43,16 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
       tempScore: 0,
     };
 
-    room.players.push(player);
-    io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
+    const alreadyInRoom = room.players.some((p) => p.id === socket.id);
+    if (!alreadyInRoom) {
+      room.players.push(player);
+      io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
+    }
   });
 
   socket.on(SOCKET_EVENTS.PIG.ROLL_DICE, ({ roomId }) => {
     const room = gameRooms[roomId];
-    if (!room) return;
+    if (!room || room.winner) return;
 
     const dice = Math.ceil(Math.random() * 6);
     const current = room.players[room.activePlayerIndex];
@@ -69,7 +72,7 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
 
   socket.on(SOCKET_EVENTS.PIG.BANK_SCORE, ({ roomId }) => {
     const room = gameRooms[roomId];
-    if (!room) return;
+    if (!room || room.winner) return;
 
     const current = room.players[room.activePlayerIndex];
     current.frozenScore += current.tempScore;
@@ -97,8 +100,12 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
     for (const roomId in gameRooms) {
       const room = gameRooms[roomId];
       room.players = room.players.filter((p) => p.id !== socket.id);
+      if (room.activePlayerIndex >= room.players.length) {
+        room.activePlayerIndex = 0;
+      }
       io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
       if (room.players.length === 0) {
+        io.to(roomId).emit(SOCKET_EVENTS.PIG.ROOM_CLOSED);
         delete gameRooms[roomId];
       }
     }
