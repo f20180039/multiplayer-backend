@@ -1,9 +1,19 @@
+// src/types/socket.ts
+import { SOCKET_EVENTS } from "../constants";
+
 export interface ClientToServerEvents {
-  join_room: (roomId: string) => void;
-  game_move: (data: { roomId: string; move: any }) => void;
+  [SOCKET_EVENTS.JOIN_ROOM]: (data: { gameId: string; roomId: string }) => void;
+  [SOCKET_EVENTS.PIG.JOIN_ROOM]: (data: {
+    roomId: string;
+    playerName: string;
+  }) => void;
+  [SOCKET_EVENTS.PIG.ROLL_DICE]: (data: { roomId: string }) => void;
+  [SOCKET_EVENTS.PIG.BANK_SCORE]: (data: { roomId: string }) => void;
+  [SOCKET_EVENTS.PIG.NEW_BANNED]: (data: { roomId: string }) => void;
 }
 
 export interface ServerToClientEvents {
-  user_joined: (userId: string) => void;
-  game_move: (move: any) => void;
+  [SOCKET_EVENTS.USER_JOINED]: (userId: string) => void;
+  [SOCKET_EVENTS.ROOM_JOINED]: (data: { roomId: string }) => void;
+  [SOCKET_EVENTS.PIG.UPDATE]: (state: any) => void;
 }
