@@ -1,11 +1,11 @@
 // multiplayer-backend/src/socketHandlers/pig/pigGameHandler.ts
 import { Server, Socket } from "socket.io";
-import { SOCKET_EVENTS } from "../../constants";
+import { SOCKET_EVENTS } from "../constants";
 import {
   deleteRoomState,
   getRoomState,
   setRoomState,
-} from "../../rooms/redisRoomState";
+} from "../rooms/redisRoomState";
 
 interface Player {
   id: string;
@@ -71,8 +71,8 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
     await setRoomState(roomId, room);
 
     console.log(`[${roomId}] Player joined: ${playerName}`);
-    io.to(roomId).emit(SOCKET_EVENTS.UPDATE, room);
-    socket.emit(SOCKET_EVENTS.UPDATE, room);
+    io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
+    socket.emit(SOCKET_EVENTS.PIG.UPDATE, room);
   });
 
   socket.on(SOCKET_EVENTS.PIG.ROLL_DICE, async ({ roomId }) => {
@@ -98,7 +98,7 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
     await setRoomState(roomId, room);
 
     console.log(`[${roomId}] ${current.name} rolled: ${dice}`);
-    io.to(roomId).emit(SOCKET_EVENTS.UPDATE, room);
+    io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
   });
 
   socket.on(SOCKET_EVENTS.PIG.BANK_SCORE, async ({ roomId }) => {
@@ -125,7 +125,7 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
     console.log(
       `[${roomId}] ${current.name} banked. Total: ${current.frozenScore}`
     );
-    io.to(roomId).emit(SOCKET_EVENTS.UPDATE, room);
+    io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
   });
 
   socket.on(SOCKET_EVENTS.PIG.NEW_BANNED, async ({ roomId }) => {
@@ -139,7 +139,7 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
     await setRoomState(roomId, room);
 
     console.log(`[${roomId}] New banned number: ${room.bannedNumber}`);
-    io.to(roomId).emit(SOCKET_EVENTS.UPDATE, room);
+    io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
   });
 
   socket.on("disconnect", async () => {
@@ -178,7 +178,7 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
       console.log(
         `[${roomId}] Player disconnected. Remaining: ${room.players.length}`
       );
-      io.to(roomId).emit(SOCKET_EVENTS.UPDATE, room);
+      io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
     }
   });
 };

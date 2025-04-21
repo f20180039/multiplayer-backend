@@ -17,7 +17,7 @@ export interface ServerToClientEvents {
   [SOCKET_EVENTS.USER_JOINED]: (userId: string) => void;
   [SOCKET_EVENTS.ROOM_JOINED]: (data: { roomId: string }) => void;
   // Shared
-  [SOCKET_EVENTS.UPDATE]: (state: any) => void;
+  // [SOCKET_EVENTS.UPDATE]: (state: any) => void;
   [SOCKET_EVENTS.ROOM_CLOSED]: () => void;
   [SOCKET_EVENTS.GAME_START]: () => void;
 }

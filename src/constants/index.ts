@@ -5,31 +5,39 @@ export enum GameId {
 }
 
 export const SOCKET_EVENTS = {
-  // Room lifecycle
-  JOIN_ROOM: "room:join",
-  ROOM_JOINED: "room:joined",
-  USER_JOINED: "room:user-joined",
-  ROOM_CLOSED: "room:closed",
+  // General room lifecycle
+  JOIN_ROOM: "join_room",
+  ROOM_JOINED: "room_joined",
+  USER_JOINED: "user_joined",
+  USER_LEFT: "user_left",
+  ROOM_CLOSED: "room_closed",
+  ROOM_FULL: "room_full",
+  ROOM_PLAYERS: "room_players",
 
-  // Game lifecycle
-  GAME_START: "game:start",
-  UPDATE: "game:update",
+  // Chat events
+  CHAT_MESSAGE: "chat_message",
 
-  // Chat
-  CHAT_MESSAGE: "chat:message",
-  CHAT_BROADCAST: "chat:broadcast",
+  // Game lifecycle events
+  GAME_START: "game_start",
+  GAME_END: "game_end",
+  GAME_RESET: "game_reset",
+  GAME_RESTART: "game_restart",
 
-  // Game-specific events
+  // Player actions
+  PLAYER_KICKED: "player_kicked",
+  PLAYER_BANNED: "player_banned",
+
+  // Internal utility events
+  REGISTER_GAME_HANDLER: "register_game_handler",
+
+  // Specific game events (Pig)
   PIG: {
-    JOIN_ROOM: "pig:join-room",
-    ROLL_DICE: "pig:roll-dice",
-    BANK_SCORE: "pig:bank",
-    NEW_BANNED: "pig:new-banned",
+    JOIN_ROOM: "pig:join_room",
+    ROLL_DICE: "pig:roll_dice",
+    BANK_SCORE: "pig:bank_score",
+    NEW_BANNED: "pig:new_banned",
+    UPDATE: "pig:update",
+    ROOM_CLOSED: "pig:room_closed",
+    GAME_START: "pig:game_start",
   },
-
-  // Future games can follow this pattern
-  // TICTACTOE: {
-  //   MAKE_MOVE: "tictactoe:make-move",
-  //   RESET_GAME: "tictactoe:reset",
-  // },
 } as const;
