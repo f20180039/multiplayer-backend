@@ -16,6 +16,7 @@ export const SOCKET_EVENTS = {
 
   // Chat events
   CHAT_MESSAGE: "chat_message",
+  CHAT_HISTORY: "chat_history",
 
   // Game lifecycle events
   GAME_START: "game_start",
@@ -26,6 +27,7 @@ export const SOCKET_EVENTS = {
   // Player actions
   PLAYER_KICKED: "player_kicked",
   PLAYER_BANNED: "player_banned",
+  PLAYER_STATUS_UPDATE: "player_status_update",
 
   // Internal utility events
   REGISTER_GAME_HANDLER: "register_game_handler",

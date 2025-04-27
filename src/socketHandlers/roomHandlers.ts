@@ -3,10 +3,18 @@ import { Server, Socket } from "socket.io";
 import { SOCKET_EVENTS } from "../constants";
 import { pubClient } from "../config/redis";
 
+const OFFLINE_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
+
 interface JoinRoomPayload {
   roomId: string;
   playerName: string;
   gameId: string;
+}
+
+interface PlayerStatus {
+  name: string;
+  lastSeen: number;
+  isOnline: boolean;
 }
 
 export const registerRoomHandlers = (io: Server, socket: Socket) => {
@@ -19,19 +27,33 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     );
 
     await pubClient.set(`room:${roomId}:game`, gameId);
-
     const currentPlayers = await pubClient.hGetAll(`room:${roomId}:players`);
 
-    // 🛑 Prevent duplicate joins for same playerName
+    // Update player status
+    await pubClient.hSet(
+      `room:${roomId}:status`,
+      socket.id,
+      JSON.stringify({
+        name: playerName,
+        lastSeen: Date.now(),
+        isOnline: true,
+      })
+    );
+
     const isPlayerAlreadyInRoom =
       Object.values(currentPlayers).includes(playerName);
     if (isPlayerAlreadyInRoom) {
-      console.log(
-        `⚠️ Player ${playerName} already in room ${roomId}, skipping re-register`
-      );
-      socket.join(roomId); // Still let them join the room to receive events
-      socket.emit(SOCKET_EVENTS.ROOM_JOINED, { roomId });
-      socket.emit(SOCKET_EVENTS.ROOM_PLAYERS, currentPlayers);
+      console.log(`⚠️ Player ${playerName} rejoining room ${roomId}`);
+      socket.join(roomId);
+
+      // Send chat history
+      const chatHistory = await pubClient.lRange(`room:${roomId}:chat`, 0, -1);
+      const messages = chatHistory.map((msg) => JSON.parse(msg));
+      socket.emit(SOCKET_EVENTS.CHAT_HISTORY, messages);
+
+      // Broadcast player status update
+      const playerStatuses = await getPlayerStatuses(roomId);
+      io.to(roomId).emit(SOCKET_EVENTS.PLAYER_STATUS_UPDATE, playerStatuses);
       return;
     }
 
@@ -55,18 +77,63 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     io.in(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, players);
   });
 
-  // Chat message sent by player
-  socket.on(SOCKET_EVENTS.CHAT_MESSAGE, ({ roomId, playerName, message }) => {
-    if (!roomId || !message?.trim()) return;
+  // Add player status cleanup on disconnect
+  socket.on("disconnect", async () => {
+    const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
 
-    const chatMessage = {
-      playerName,
-      message,
-      timestamp: new Date().toISOString(),
-    };
+    for (const roomId of rooms) {
+      // Mark player as offline but don't remove immediately
+      await pubClient.hSet(
+        `room:${roomId}:status`,
+        socket.id,
+        JSON.stringify({
+          name: await pubClient.hGet(`room:${roomId}:players`, socket.id),
+          lastSeen: Date.now(),
+          isOnline: false,
+        })
+      );
 
-    io.to(roomId).emit(SOCKET_EVENTS.CHAT_MESSAGE, chatMessage);
+      // Schedule cleanup after timeout
+      setTimeout(async () => {
+        const status = await pubClient.hGet(`room:${roomId}:status`, socket.id);
+        if (status) {
+          const playerStatus = JSON.parse(status);
+          if (
+            !playerStatus.isOnline &&
+            Date.now() - playerStatus.lastSeen >= OFFLINE_TIMEOUT
+          ) {
+            await pubClient.hDel(`room:${roomId}:players`, socket.id);
+            await pubClient.hDel(`room:${roomId}:status`, socket.id);
+
+            // Broadcast updated player list
+            const updatedPlayers = await pubClient.hGetAll(
+              `room:${roomId}:players`
+            );
+            io.to(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, updatedPlayers);
+          }
+        }
+      }, OFFLINE_TIMEOUT);
+    }
   });
+
+  // Chat message sent by player
+  socket.on(
+    SOCKET_EVENTS.CHAT_MESSAGE,
+    async ({ roomId, playerName, message }) => {
+      const chatMessage = {
+        playerName,
+        message,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Store message in Redis
+      await pubClient.rPush(`room:${roomId}:chat`, JSON.stringify(chatMessage));
+      // Trim chat history to last 100 messages
+      await pubClient.lTrim(`room:${roomId}:chat`, -100, -1);
+
+      io.to(roomId).emit(SOCKET_EVENTS.CHAT_MESSAGE, chatMessage);
+    }
+  );
 
   // Player leaves room or disconnects
   socket.on("disconnect", async () => {
@@ -75,7 +142,7 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     for (const roomId of rooms) {
       // Remove player by socket ID from Redis
       await pubClient.hDel(`room:${roomId}:players`, socket.id);
-      
+
       // Broadcast updated player list
       const updatedPlayers = await pubClient.hGetAll(`room:${roomId}:players`);
       io.to(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, updatedPlayers);
@@ -145,3 +212,19 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     io.to(roomId).emit(SOCKET_EVENTS.PLAYER_BANNED, { playerId });
   });
 };
+
+async function getPlayerStatuses(roomId: string) {
+  const statuses = await pubClient.hGetAll(`room:${roomId}:status`);
+  // statuses is { [socketId]: stringified PlayerStatus }
+  return Object.entries(statuses).map(([id, status]) => {
+    try {
+      const parsed = JSON.parse(status);
+      return {
+        id,
+        ...parsed,
+      };
+    } catch {
+      return { id, name: "Unknown", lastSeen: 0, isOnline: false };
+    }
+  });
+}
