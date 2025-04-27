@@ -29,6 +29,14 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     await pubClient.set(`room:${roomId}:game`, gameId);
     const currentPlayers = await pubClient.hGetAll(`room:${roomId}:players`);
 
+    // Remove any previous socketId for this playerName
+    for (const [id, name] of Object.entries(currentPlayers)) {
+      if (name === playerName && id !== socket.id) {
+        await pubClient.hDel(`room:${roomId}:players`, id);
+        await pubClient.hDel(`room:${roomId}:status`, id);
+      }
+    }
+
     // Update player status
     await pubClient.hSet(
       `room:${roomId}:status`,
@@ -40,45 +48,33 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
       })
     );
 
-    const isPlayerAlreadyInRoom =
-      Object.values(currentPlayers).includes(playerName);
-    if (isPlayerAlreadyInRoom) {
-      console.log(`⚠️ Player ${playerName} rejoining room ${roomId}`);
-      socket.join(roomId);
-
-      // Send chat history
-      const chatHistory = await pubClient.lRange(`room:${roomId}:chat`, 0, -1);
-      const messages = chatHistory.map((msg) => JSON.parse(msg));
-      socket.emit(SOCKET_EVENTS.CHAT_HISTORY, messages);
-
-      // Broadcast player status update
-      const playerStatuses = await getPlayerStatuses(roomId);
-      io.to(roomId).emit(SOCKET_EVENTS.PLAYER_STATUS_UPDATE, playerStatuses);
-      return;
-    }
-
-    // Prevent joining if room is full (example limit of 6 players)
-    if (Object.keys(currentPlayers).length >= 6) {
-      socket.emit(SOCKET_EVENTS.ROOM_FULL, "Room capacity reached");
-      return;
-    }
-
-    // ✅ Register new player
+    // Register new player (always by socket.id)
     await pubClient.hSet(`room:${roomId}:players`, socket.id, playerName);
     socket.join(roomId);
+
+    // Send chat history
+    const chatHistory = await pubClient.lRange(`room:${roomId}:chat`, 0, -1);
+    const messages = chatHistory.map((msg) => JSON.parse(msg));
+    socket.emit(SOCKET_EVENTS.CHAT_HISTORY, messages);
+
+    // Broadcast player status update
+    const playerStatuses = await getPlayerStatuses(roomId);
+    io.to(roomId).emit(SOCKET_EVENTS.PLAYER_STATUS_UPDATE, playerStatuses);
+
+    // Broadcast updated player list
+    const players = await pubClient.hGetAll(`room:${roomId}:players`);
+    io.in(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, players);
 
     socket.emit(SOCKET_EVENTS.ROOM_JOINED, { roomId });
     socket.to(roomId).emit(SOCKET_EVENTS.USER_JOINED, {
       socketId: socket.id,
       playerName,
     });
-
-    const players = await pubClient.hGetAll(`room:${roomId}:players`);
-    io.in(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, players);
   });
 
-  // Add player status cleanup on disconnect
+  // Consolidated disconnect logic
   socket.on("disconnect", async () => {
+    console.log("❌ User disconnected:", socket.id);
     const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
 
     for (const roomId of rooms) {
@@ -110,6 +106,24 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
               `room:${roomId}:players`
             );
             io.to(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, updatedPlayers);
+
+            // Leader handoff logic (if the player was the room leader)
+            let roomStateString = await pubClient.get(`game:state:${roomId}`);
+            let roomState = roomStateString ? JSON.parse(roomStateString) : null;
+
+            if (roomState && roomState.leaderId === socket.id) {
+              const remainingPlayers = Object.keys(updatedPlayers);
+              roomState.leaderId = remainingPlayers[0] || null;
+              await pubClient.set(`game:state:${roomId}`, JSON.stringify(roomState));
+            }
+
+            // If room is empty, clean up and emit ROOM_CLOSED event
+            if (Object.keys(updatedPlayers).length === 0) {
+              await pubClient.del(`room:${roomId}:game`);
+              await pubClient.del(`game:state:${roomId}`);
+              await pubClient.del(`room:${roomId}:players`);
+              io.to(roomId).emit(SOCKET_EVENTS.ROOM_CLOSED);
+            }
           }
         }
       }, OFFLINE_TIMEOUT);
@@ -134,38 +148,6 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
       io.to(roomId).emit(SOCKET_EVENTS.CHAT_MESSAGE, chatMessage);
     }
   );
-
-  // Player leaves room or disconnects
-  socket.on("disconnect", async () => {
-    console.log("❌ User disconnected:", socket.id);
-    const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
-    for (const roomId of rooms) {
-      // Remove player by socket ID from Redis
-      await pubClient.hDel(`room:${roomId}:players`, socket.id);
-
-      // Broadcast updated player list
-      const updatedPlayers = await pubClient.hGetAll(`room:${roomId}:players`);
-      io.to(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, updatedPlayers);
-
-      // Leader handoff logic (if the player was the room leader)
-      let roomStateString = await pubClient.get(`game:state:${roomId}`);
-      let roomState = roomStateString ? JSON.parse(roomStateString) : null;
-
-      if (roomState && roomState.leaderId === socket.id) {
-        const remainingPlayers = Object.keys(updatedPlayers);
-        roomState.leaderId = remainingPlayers[0] || null;
-        await pubClient.set(`game:state:${roomId}`, JSON.stringify(roomState));
-      }
-
-      // If room is empty, clean up and emit ROOM_CLOSED event
-      if (Object.keys(updatedPlayers).length === 0) {
-        await pubClient.del(`room:${roomId}:game`);
-        await pubClient.del(`game:state:${roomId}`);
-        await pubClient.del(`room:${roomId}:players`);
-        io.to(roomId).emit(SOCKET_EVENTS.ROOM_CLOSED);
-      }
-    }
-  });
 
   // General room closure (when no players remain)
   socket.on(SOCKET_EVENTS.ROOM_CLOSED, async ({ roomId }) => {
