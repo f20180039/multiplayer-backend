@@ -3,44 +3,39 @@ import { Server, Socket } from "socket.io";
 import { SOCKET_EVENTS } from "../constants";
 import { pubClient } from "../config/redis";
 
-const OFFLINE_TIMEOUT = 2 * 60 * 1000; // 2 minutes in milliseconds
+const OFFLINE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 interface JoinRoomPayload {
   roomId: string;
   playerName: string;
+  playerId: string;
   gameId: string;
-}
-
-interface PlayerStatus {
-  name: string;
-  lastSeen: number;
-  isOnline: boolean;
 }
 
 export const registerRoomHandlers = (io: Server, socket: Socket) => {
   // Player joins a room
   socket.on(SOCKET_EVENTS.JOIN_ROOM, async (data: JoinRoomPayload) => {
-    const { roomId, playerName, gameId } = data;
+    const { roomId, playerName, playerId, gameId } = data;
 
     console.log(
-      `🎮 [JOIN_ROOM] ${playerName} (${socket.id}) joining room ${roomId}`
+      `🎮 [JOIN_ROOM] ${playerName} (${playerId}, socket: ${socket.id}) joining room ${roomId}`
     );
 
     await pubClient.set(`room:${roomId}:game`, gameId);
-    const currentPlayers = await pubClient.hGetAll(`room:${roomId}:players`);
 
-    // Remove any previous socketId for this playerName
-    for (const [id, name] of Object.entries(currentPlayers)) {
-      if (name === playerName && id !== socket.id) {
-        await pubClient.hDel(`room:${roomId}:players`, id);
-        await pubClient.hDel(`room:${roomId}:status`, id);
-      }
+    // Remove any previous socket for this playerId (if exists)
+    const prevSocketId = await pubClient.hGet(`room:${roomId}:playerSockets`, playerId);
+    if (prevSocketId && prevSocketId !== socket.id) {
+      // Optionally: disconnect previous socket
+      // io.sockets.sockets.get(prevSocketId)?.disconnect(true);
     }
 
-    // Update player status
+    // Update mappings
+    await pubClient.hSet(`room:${roomId}:playerIds`, playerId, playerName);
+    await pubClient.hSet(`room:${roomId}:playerSockets`, playerId, socket.id);
     await pubClient.hSet(
       `room:${roomId}:status`,
-      socket.id,
+      playerId,
       JSON.stringify({
         name: playerName,
         lastSeen: Date.now(),
@@ -48,8 +43,6 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
       })
     );
 
-    // Register new player (always by socket.id)
-    await pubClient.hSet(`room:${roomId}:players`, socket.id, playerName);
     socket.join(roomId);
 
     // Send chat history
@@ -62,12 +55,12 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     io.to(roomId).emit(SOCKET_EVENTS.PLAYER_STATUS_UPDATE, playerStatuses);
 
     // Broadcast updated player list
-    const players = await pubClient.hGetAll(`room:${roomId}:players`);
+    const players = await pubClient.hGetAll(`room:${roomId}:playerIds`);
     io.in(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, players);
 
     socket.emit(SOCKET_EVENTS.ROOM_JOINED, { roomId });
     socket.to(roomId).emit(SOCKET_EVENTS.USER_JOINED, {
-      socketId: socket.id,
+      playerId,
       playerName,
     });
   });
@@ -75,15 +68,22 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
   // Consolidated disconnect logic
   socket.on("disconnect", async () => {
     console.log("❌ User disconnected:", socket.id);
-    const rooms = Array.from(socket.rooms).filter((r) => r !== socket.id);
+    // Find all rooms this socket was mapped to
+    const keys = await pubClient.keys("room:*:playerSockets");
+    for (const key of keys) {
+      const roomId = key.split(":")[1];
+      const playerSockets = await pubClient.hGetAll(key);
+      const playerId = Object.entries(playerSockets).find(
+        ([, sId]) => sId === socket.id
+      )?.[0];
+      if (!playerId) continue;
 
-    for (const roomId of rooms) {
       // Mark player as offline but don't remove immediately
       await pubClient.hSet(
         `room:${roomId}:status`,
-        socket.id,
+        playerId,
         JSON.stringify({
-          name: await pubClient.hGet(`room:${roomId}:players`, socket.id),
+          name: await pubClient.hGet(`room:${roomId}:playerIds`, playerId),
           lastSeen: Date.now(),
           isOnline: false,
         })
@@ -91,37 +91,30 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
 
       // Schedule cleanup after timeout
       setTimeout(async () => {
-        const status = await pubClient.hGet(`room:${roomId}:status`, socket.id);
+        const status = await pubClient.hGet(`room:${roomId}:status`, playerId);
         if (status) {
           const playerStatus = JSON.parse(status);
           if (
             !playerStatus.isOnline &&
             Date.now() - playerStatus.lastSeen >= OFFLINE_TIMEOUT
           ) {
-            await pubClient.hDel(`room:${roomId}:players`, socket.id);
-            await pubClient.hDel(`room:${roomId}:status`, socket.id);
+            await pubClient.hDel(`room:${roomId}:playerIds`, playerId);
+            await pubClient.hDel(`room:${roomId}:playerSockets`, playerId);
+            await pubClient.hDel(`room:${roomId}:status`, playerId);
 
             // Broadcast updated player list
             const updatedPlayers = await pubClient.hGetAll(
-              `room:${roomId}:players`
+              `room:${roomId}:playerIds`
             );
             io.to(roomId).emit(SOCKET_EVENTS.ROOM_PLAYERS, updatedPlayers);
-
-            // Leader handoff logic (if the player was the room leader)
-            let roomStateString = await pubClient.get(`game:state:${roomId}`);
-            let roomState = roomStateString ? JSON.parse(roomStateString) : null;
-
-            if (roomState && roomState.leaderId === socket.id) {
-              const remainingPlayers = Object.keys(updatedPlayers);
-              roomState.leaderId = remainingPlayers[0] || null;
-              await pubClient.set(`game:state:${roomId}`, JSON.stringify(roomState));
-            }
 
             // If room is empty, clean up and emit ROOM_CLOSED event
             if (Object.keys(updatedPlayers).length === 0) {
               await pubClient.del(`room:${roomId}:game`);
               await pubClient.del(`game:state:${roomId}`);
-              await pubClient.del(`room:${roomId}:players`);
+              await pubClient.del(`room:${roomId}:playerIds`);
+              await pubClient.del(`room:${roomId}:playerSockets`);
+              await pubClient.del(`room:${roomId}:status`);
               io.to(roomId).emit(SOCKET_EVENTS.ROOM_CLOSED);
             }
           }
@@ -197,7 +190,7 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
 
 async function getPlayerStatuses(roomId: string) {
   const statuses = await pubClient.hGetAll(`room:${roomId}:status`);
-  // statuses is { [socketId]: stringified PlayerStatus }
+  // statuses is { [playerId]: stringified PlayerStatus }
   return Object.entries(statuses).map(([id, status]) => {
     try {
       const parsed = JSON.parse(status);

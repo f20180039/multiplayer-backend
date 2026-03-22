@@ -12,6 +12,7 @@ interface Player {
   name: string;
   frozenScore: number;
   tempScore: number;
+  isActive: boolean;
 }
 
 interface RoomState {
@@ -45,16 +46,27 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
       };
     }
 
-    // Add player if not already in room
-    const alreadyInRoom = room.players.some((p) => p.id === socket.id);
-    if (!alreadyInRoom) {
-      const player: Player = {
-        id: socket.id,
-        name: playerName || "Player",
-        frozenScore: 0,
-        tempScore: 0,
-      };
-      room.players.push(player);
+    // Check if player is reconnecting (match by name for score preservation)
+    const existingPlayer = room.players.find(
+      (p) => p.name === playerName && !p.isActive
+    );
+    if (existingPlayer) {
+      // Restore disconnected player with new socket id, preserving scores
+      existingPlayer.id = socket.id;
+      existingPlayer.isActive = true;
+    } else {
+      // Add player if not already in room
+      const alreadyInRoom = room.players.some((p) => p.id === socket.id);
+      if (!alreadyInRoom) {
+        const player: Player = {
+          id: socket.id,
+          name: playerName || "Player",
+          frozenScore: 0,
+          tempScore: 0,
+          isActive: true,
+        };
+        room.players.push(player);
+      }
     }
 
     // Assign leader if room just started and no leader
@@ -150,33 +162,52 @@ export const pigGameHandler = (io: Server, socket: Socket) => {
       const room = await getRoomState<RoomState>(roomId);
       if (!room) continue;
 
-      // Check if the socket was the leader
+      const player = room.players.find((p) => p.id === socket.id);
+      if (!player) continue;
+
+      // Mark player as inactive instead of removing (preserve scores)
+      player.isActive = false;
+
+      // If it was this player's turn, skip to next active player
+      const activePlayers = room.players.filter((p) => p.isActive);
+      if (
+        room.players[room.activePlayerIndex]?.id === socket.id &&
+        activePlayers.length > 0
+      ) {
+        // Find next active player
+        let nextIndex = (room.activePlayerIndex + 1) % room.players.length;
+        while (!room.players[nextIndex].isActive) {
+          nextIndex = (nextIndex + 1) % room.players.length;
+        }
+        room.activePlayerIndex = nextIndex;
+      }
+
+      // Reassign leader if needed
       const wasLeader = socket.id === room.leaderId;
-      room.players = room.players.filter((p) => p.id !== socket.id);
-
-      // Adjust active player index if necessary
-      if (room.activePlayerIndex >= room.players.length) {
-        room.activePlayerIndex = 0;
+      if (wasLeader && activePlayers.length > 0) {
+        room.leaderId = activePlayers[0].id;
       }
 
-      // Assign a new leader if the previous one disconnected
-      if (wasLeader && room.players.length > 0) {
-        room.leaderId = room.players[0].id;
-      }
-
-      // If no players left, delete the room state from Redis
-      if (room.players.length === 0) {
-        console.log(`[${roomId}] Room closed (empty).`);
-        io.to(roomId).emit(SOCKET_EVENTS.ROOM_CLOSED);
-        await deleteRoomState(roomId);
+      // If no active players remain, schedule cleanup after 5 minutes
+      if (activePlayers.length === 0) {
+        await setRoomState(roomId, room);
+        setTimeout(async () => {
+          const currentRoom = await getRoomState<RoomState>(roomId);
+          if (!currentRoom) return;
+          const stillActive = currentRoom.players.some((p) => p.isActive);
+          if (!stillActive) {
+            console.log(`[${roomId}] Room closed (all players inactive for 5 min).`);
+            io.to(roomId).emit(SOCKET_EVENTS.ROOM_CLOSED);
+            await deleteRoomState(roomId);
+          }
+        }, 5 * 60 * 1000);
         continue;
       }
 
-      // Save the updated room state to Redis
       await setRoomState(roomId, room);
 
       console.log(
-        `[${roomId}] Player disconnected. Remaining: ${room.players.length}`
+        `[${roomId}] Player disconnected (scores preserved). Active: ${activePlayers.length}`
       );
       io.to(roomId).emit(SOCKET_EVENTS.PIG.UPDATE, room);
     }

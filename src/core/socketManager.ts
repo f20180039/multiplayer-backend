@@ -5,12 +5,38 @@ import { GameId, SOCKET_EVENTS } from "../constants";
 import { pubClient, subClient } from "../config/redis";
 import { gameHandlers } from "../socketHandlers";
 import { registerRoomHandlers } from "../socketHandlers/roomHandlers";
+import { verifyIdToken } from "../config/firebase";
 
 export const initializeSocketServer = async (io: Server) => {
   await pubClient.connect();
   await subClient.connect();
 
   io.adapter(createAdapter(pubClient, subClient));
+
+  // Auth middleware: verify Google token or accept guest credentials
+  io.use(async (socket, next) => {
+    const { token, guestId, playerName } = socket.handshake.auth;
+
+    if (token) {
+      const user = await verifyIdToken(token);
+      if (!user) {
+        return next(new Error("Invalid authentication token"));
+      }
+      socket.data.userId = user.uid;
+      socket.data.displayName = user.name;
+      socket.data.authType = "google";
+      return next();
+    }
+
+    if (guestId) {
+      socket.data.userId = guestId;
+      socket.data.displayName = playerName || "Guest";
+      socket.data.authType = "guest";
+      return next();
+    }
+
+    return next(new Error("Authentication required: provide token or guestId"));
+  });
 
   io.on("connection", (socket: Socket) => {
     console.log("✅ User connected:", socket.id);
