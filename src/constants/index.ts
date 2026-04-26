@@ -1,7 +1,7 @@
 // src/constants/index.ts
 export enum GameId {
   PIG_GAME = "pig-game",
-  // Add other games here
+  DICE_ELIMINATION = "dice-elimination",
 }
 
 export const SOCKET_EVENTS = {
@@ -41,5 +41,13 @@ export const SOCKET_EVENTS = {
     UPDATE: "pig:update",
     ROOM_CLOSED: "pig:room_closed",
     GAME_START: "pig:game_start",
+  },
+
+  // Specific game events (Dice Elimination)
+  DICE_ELIMINATION: {
+    JOIN_GAME: "dice-elimination:join_game",
+    ROLL_DICE: "dice-elimination:roll_dice",
+    RESET_GAME: "dice-elimination:reset_game",
+    UPDATE: "dice-elimination:update",
   },
 } as const;

@@ -1,7 +1,9 @@
 // src/socketHandlers/index.ts
 import { GameId } from "../constants";
 import { pigGameHandler } from "./pigGameHandler";
+import { diceEliminationGameHandler } from "./diceEliminationGameHandler";
 
 export const gameHandlers: Record<GameId, typeof pigGameHandler> = {
-  [GameId.PIG_GAME]: pigGameHandler, // Add other game handlers if you have more games
+  [GameId.PIG_GAME]: pigGameHandler,
+  [GameId.DICE_ELIMINATION]: diceEliminationGameHandler,
 };

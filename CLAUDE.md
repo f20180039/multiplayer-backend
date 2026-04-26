@@ -29,10 +29,33 @@ game:state:{roomId}          — JSON string of game state
 ```
 PORT=4000
 REDIS_URL=redis://localhost:6379
-CORS_ORIGIN=
+CORS_ORIGIN=http://localhost:5173
 FIREBASE_PROJECT_ID=your-project-id
 GOOGLE_APPLICATION_CREDENTIALS=path/to/serviceAccountKey.json
 ```
+
+## Local Run
+Start Redis from the repo root, then run the backend:
+
+```bash
+docker compose up redis -d
+cd multiplayer-backend
+npm install
+npm run dev
+```
+
+Backend health check:
+
+```text
+http://localhost:4000
+```
+
+## Public Hosting
+- Deploy to a Node/WebSocket-capable host such as Render, Railway, Fly.io, Google Cloud Run, AWS ECS, or a VPS
+- Use a managed Redis provider such as Upstash, Redis Cloud, Railway Redis, or Render Redis
+- Set `REDIS_URL` to the managed Redis URL, usually `rediss://...` when TLS is required
+- Set `CORS_ORIGIN` to the deployed frontend URL
+- Store Firebase Admin credentials as a secret or mounted file; do not commit service account JSON
 
 ## Auth Middleware (socketManager.ts)
 - Google users: `socket.handshake.auth.token` verified via Firebase Admin → sets `socket.data.userId`, `socket.data.displayName`, `socket.data.authType = 'google'`
