@@ -26,6 +26,7 @@ Create `multiplayer-backend/.env`:
 
 ```env
 PORT=4000
+NODE_ENV=development
 REDIS_URL=redis://localhost:6379
 CORS_ORIGIN=http://localhost:5173
 FIREBASE_PROJECT_ID=your-firebase-project-id
@@ -50,13 +51,14 @@ Production env example:
 
 ```env
 PORT=4000
+NODE_ENV=production
 REDIS_URL=rediss://your-managed-redis-url
 CORS_ORIGIN=https://your-frontend-domain.com
 FIREBASE_PROJECT_ID=your-firebase-project-id
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/serviceAccountKey.json
 ```
 
-Use a managed Redis provider such as Upstash, Redis Cloud, Railway Redis, or Render Redis. If the provider requires TLS, the URL will usually start with `rediss://`.
+Use a managed Redis provider such as Upstash, Redis Cloud, Railway Redis, or Render Redis. If the provider requires TLS, the URL will usually start with `rediss://`. The backend also supports `FIREBASE_SERVICE_ACCOUNT_JSON` for hosts where secret files are inconvenient.
 
 ## Key Files
 

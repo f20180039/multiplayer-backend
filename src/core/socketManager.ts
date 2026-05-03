@@ -2,7 +2,7 @@
 import { Server, Socket } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { GameId, SOCKET_EVENTS } from "../constants";
-import { pubClient, subClient } from "../config/redis";
+import { isInMemoryRedis, pubClient, subClient } from "../config/redis";
 import { gameHandlers } from "../socketHandlers";
 import { registerRoomHandlers } from "../socketHandlers/roomHandlers";
 import { verifyIdToken } from "../config/firebase";
@@ -11,7 +11,9 @@ export const initializeSocketServer = async (io: Server) => {
   await pubClient.connect();
   await subClient.connect();
 
-  io.adapter(createAdapter(pubClient, subClient));
+  if (!isInMemoryRedis) {
+    io.adapter(createAdapter(pubClient, subClient));
+  }
 
   // Auth middleware: verify Google token or accept guest credentials
   io.use(async (socket, next) => {

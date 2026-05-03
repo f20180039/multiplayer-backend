@@ -1,17 +1,23 @@
 // src/config/redis.ts
 import { createClient } from "redis";
+import { env } from "./env";
+import { InMemoryRedis } from "./inMemoryRedis";
 
-const isProduction = process.env.NODE_ENV === "production";
+console.log(
+  `Connecting to Redis: ${
+    env.useInMemoryRedis
+      ? "in-memory local development"
+      : env.isProduction
+        ? "production"
+        : "development"
+  }`
+);
 
-// Use standard Redis client for BOTH local and production
-// This ensures Socket.IO adapter works correctly with pub/sub
-const redisUrl = isProduction
-  ? process.env.REDIS_URL // Upstash Redis protocol URL (rediss://...)
-  : (process.env.REDIS_URL || "redis://localhost:6379"); // Local Redis
+export const isInMemoryRedis = env.useInMemoryRedis;
 
-console.log(`🔧 Connecting to Redis: ${isProduction ? 'Upstash (production)' : 'Local (development)'}`);
-
-const pubClient = createClient({ url: redisUrl });
+const pubClient = env.useInMemoryRedis
+  ? new InMemoryRedis()
+  : createClient({ url: env.redisUrl });
 const subClient = pubClient.duplicate();
 
 export { pubClient, subClient };

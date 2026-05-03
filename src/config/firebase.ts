@@ -1,36 +1,34 @@
 import admin from "firebase-admin";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { env } from "./env";
 
 let app: admin.app.App;
 
 try {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  if (env.firebaseServiceAccountJson) {
     // Production (Render) - use environment variable
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const serviceAccount = JSON.parse(env.firebaseServiceAccountJson);
     app = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      projectId: process.env.FIREBASE_PROJECT_ID,
+      projectId: env.firebaseProjectId,
     });
-    console.log("✅ Firebase Admin initialized (from env variable)");
-  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    console.log("Firebase Admin initialized from env variable");
+  } else if (env.googleApplicationCredentials) {
     // Local development - use file path
     app = admin.initializeApp({
-      credential: admin.credential.cert(process.env.GOOGLE_APPLICATION_CREDENTIALS),
-      projectId: process.env.FIREBASE_PROJECT_ID,
+      credential: admin.credential.cert(env.googleApplicationCredentials),
+      projectId: env.firebaseProjectId,
     });
-    console.log("✅ Firebase Admin initialized (from file)");
+    console.log("Firebase Admin initialized from file");
   } else {
     // Fallback to application default credentials
     app = admin.initializeApp({
       credential: admin.credential.applicationDefault(),
-      projectId: process.env.FIREBASE_PROJECT_ID,
+      projectId: env.firebaseProjectId,
     });
-    console.log("✅ Firebase Admin initialized (default credentials)");
+    console.log("Firebase Admin initialized with default credentials");
   }
 } catch (error) {
-  console.error("❌ Firebase Admin initialization failed:", error);
+  console.error("Firebase Admin initialization failed:", error);
   throw error;
 }
 
