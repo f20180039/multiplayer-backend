@@ -1,6 +1,6 @@
 // src/socketHandlers/roomHandlers.ts
 import { Server, Socket } from "socket.io";
-import { SOCKET_EVENTS } from "../constants";
+import { GameId, PANIC_POTATO_LIMITS, SOCKET_EVENTS } from "../constants";
 import { pubClient } from "../config/redis";
 
 const OFFLINE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -22,6 +22,21 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     );
 
     await pubClient.set(`room:${roomId}:game`, gameId);
+
+    if (gameId === GameId.PANIC_POTATO) {
+      const currentPlayers = await pubClient.hGetAll(`room:${roomId}:playerIds`);
+      const alreadyInRoom = Object.prototype.hasOwnProperty.call(
+        currentPlayers,
+        playerId
+      );
+      if (
+        !alreadyInRoom &&
+        Object.keys(currentPlayers).length >= PANIC_POTATO_LIMITS.MAX_PLAYERS
+      ) {
+        socket.emit(SOCKET_EVENTS.ROOM_FULL, { roomId });
+        return;
+      }
+    }
 
     // Remove any previous socket for this playerId (if exists)
     const prevSocketId = await pubClient.hGet(`room:${roomId}:playerSockets`, playerId);

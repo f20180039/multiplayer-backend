@@ -16,7 +16,7 @@ app.get("/", (_, res) => {
 
 app.get("/api/check-room-existence/:gameId/:roomId", async (req, res) => {
   const { roomId } = req.params;
-  const players = await pubClient.hGetAll(`room:${roomId}:players`);
+  const players = await pubClient.hGetAll(`room:${roomId}:playerIds`);
   if (players && Object.keys(players).length > 0) {
     res.status(200).json({ exists: true });
   } else {
