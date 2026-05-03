@@ -47,7 +47,7 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
 
     // Send chat history
     const chatHistory = await pubClient.lRange(`room:${roomId}:chat`, 0, -1);
-    const messages = chatHistory.map((msg) => JSON.parse(msg));
+    const messages = chatHistory.map((msg: string) => JSON.parse(msg));
     socket.emit(SOCKET_EVENTS.CHAT_HISTORY, messages);
 
     // Broadcast player status update
@@ -193,7 +193,7 @@ async function getPlayerStatuses(roomId: string) {
   // statuses is { [playerId]: stringified PlayerStatus }
   return Object.entries(statuses).map(([id, status]) => {
     try {
-      const parsed = JSON.parse(status);
+      const parsed = JSON.parse(status as string);
       return {
         id,
         ...parsed,
